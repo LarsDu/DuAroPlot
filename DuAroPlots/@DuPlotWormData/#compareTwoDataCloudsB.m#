@@ -1,0 +1,220 @@
+function [axesHandle] = compareTwoDataCloudsB(DuPlotData1,...
+    channel1,...
+    DuPlotData2, ...
+    channel2, ...
+    varargin)
+%Permutation test written by Scott Rifkin
+%This will perform a permutation and plot out the results.
+%I modified this to take DuPlotWormData objects as
+%input --Larry
+%(The B version uses DuPlotWormData.addPlotToAxes
+%to draw plots instead of using multiple Axes
+
+
+% Usage:
+% SomeObject.compareTwoDataClouds(wormDataObj1,'tmr',wormDataObj2,'tmr')
+% SomeObject.compareTwoDataClouds(wormDataObj1,'tmr',wormDataObj2,'tmr')
+% Additionally, user can add xmin,xmax,smoothingParam as
+% arguments.
+
+
+%Set default parameters for optional inputs
+%Good instructions at
+%http://blogs.mathworks.com/loren/2009/05/05/nice-way-to-set-function-defaults/
+numvarargs = length(varargin);
+
+if numvarargs > 4
+    error('compareTwoDataClouds', ...
+        'requires at most 3 optional inputs (xmin, xmax,',...
+        'smoothingParam, rRepetitions)');
+end
+
+%Default arguments
+optargs = {44,160,0.0001,500};
+
+%44 nuclei corresponds to start of 4E stage
+% now put these defaults into the valuesToUse cell array,
+% and overwrite the ones specified in varargin.
+optargs(1:numvarargs) = varargin;
+% or ...
+% [optargs{1:numvarargs}] = varargin{:};
+
+% Place optional args in memorable variable names
+[xmin, xmax, smoothingParam,nRepetitions] = optargs{:};
+
+channelIndex1 = DuPlotData1.channel.(channel1);
+channelIndex2 = DuPlotData2.channel.(channel2);
+
+xRange = [xmin, xmax];
+
+%Plot options:
+colorRandom = [.65,.84,.52]; %light guacamole
+colorMeanDifference = [0,0.45,0]; %green
+colorP = 'blue';
+colorEcell = [0.5 0.5 0.5]; %gray
+
+% x1 is nuclei, y1 is spots.  Same with x2 and y2.
+x1 = DuPlotData1.myWormDataStruct.spotNum(:,DuPlotData1.NUCLEI_IND);
+x2= DuPlotData2.myWormDataStruct.spotNum(:,DuPlotData2.NUCLEI_IND);
+
+
+y1 = DuPlotData1.myWormDataStruct.spotNum(:, channelIndex1);
+y2= DuPlotData2.myWormDataStruct.spotNum(:, channelIndex2);
+
+
+
+
+%Fit smoothing spline to Data1 channel and Data2 channel
+curve1=fit(x1,y1,'smoothingspline','SmoothingParam',smoothingParam);
+curve2=fit(x2,y2,'smoothingspline','SmoothingParam',smoothingParam);
+
+%Take the difference of mean curves at each x-value
+xValsToUse=[xRange(1):xRange(2)];
+mean1=feval(curve1,xValsToUse);
+mean2=feval(curve2,xValsToUse);
+diff=mean1-mean2;
+
+%%First plot of mean values
+%closeFigNum(6);
+%figure(6)
+%subplot(2,1,1)
+%plot(xValsToUse,mean1,'c','LineWidth',2);
+%hold on
+%plot(xValsToUse,mean2,'m','LineWidth',2);
+%plot(x1,y1,'c.');plot(x2,y2,'m.');
+%hold off
+%xlabel('# nuclei');
+%ylabel('# transcripts');
+%xlim(xRange);
+
+%Now repeat this process except scramble up the data
+%Note that this assumes that all the data in your vectors is good.  If it
+%isn't good remove it before passing it into the function
+len1=length(x1);
+len2=length(x2);
+nAllData=len1+len2;
+
+allX=[x1;x2];
+allY=[y1;y2];
+
+%nRepetitions=500;
+
+randomDifferences=zeros(length(diff),nRepetitions); %Matrix to hold the random permutations
+for i=1:nRepetitions
+    p=randperm(nAllData);
+    randX=allX(p);
+    randY=allY(p);
+    randX1=randX(1:len1);
+    randX2=randX((len1+1):end);
+    randY1=randY(1:len1);
+    randY2=randY((len1+1):end);
+    
+    randCurve1=fit(randX1,randY1,'smoothingspline','SmoothingParam',smoothingParam);
+    randCurve2=fit(randX2,randY2,'smoothingspline','SmoothingParam',smoothingParam);
+    
+    randMean1=feval(randCurve1,xValsToUse);
+    randMean2=feval(randCurve2,xValsToUse);
+    randDiff=randMean1-randMean2;
+    randomDifferences(:,i)=randDiff;
+    
+end;
+
+%%Calculate percentiles
+%Plot percentiles
+md=median(randomDifferences,2);
+dpmd=abs(diff-md);
+mdRep=repmat(md,1,nRepetitions);
+compareMat=abs(randomDifferences-mdRep);
+comparisons=compareMat>repmat(dpmd,1,nRepetitions);
+dp=sum(comparisons,2)/nRepetitions;
+
+
+
+
+
+%Set up plots (separately)
+fig0= figure('Position' ,[0,0,500,400]);
+%First axesHandle will plot 
+hax0 = axes('Parent' ,fig0);
+
+
+
+
+
+%Plot mean (spline) differences for randomized label datasets
+diffLine = line(xValsToUse,randomDifferences,'Color',colorRandom,...
+'Parent',hax0);
+
+set(hax0,'YAxisLocation','right');
+ylabel(hax0,'Difference in mean # of transcripts','Color',...
+                         colorMeanDifference,'FontSize',11);
+xlabel(hax0,'Number of nuclei','FontSize',11);
+hax0Pos = get(hax0,'Position')
+
+
+
+%Plot actual mean (spline) differences for both datasets 
+%(diff is mean1-mean2)
+%Set up plots (separately)
+fig1= figure('Position' ,[0,0,500,400]);
+%First axesHandle will plot 
+hax1 = axes('Parent' ,fig1);
+
+meanLine = line(xValsToUse,diff,'Color',colorMeanDifference,'LineWidth',3,...
+    'Parent',hax1);
+
+
+
+
+
+
+%Plot P-values
+%Set up plots (separately)
+fig2= figure('Position' ,[0,0,500,400]);
+%First axesHandle will plot 
+hax2 = axes('Parent' ,fig2);
+
+%Note may need to re-position hax2 to hax0Pos--Larry
+hax2 = axes('Parent',fig2, ...
+    'YAxisLocation','left','Color','none','YColor',colorP);
+%Note, you must set color of axesHandle2 to 'none' for transparency
+ylabel(hax2,'P-value','Color',colorP,...
+                                     'FontSize',11);
+line(xValsToUse,dp,'Color','b','LineWidth',1,'Parent',hax2);
+line(xValsToUse,.05,'Parent',hax2); %Alpha line
+
+
+
+%Vertical E-cell marker lines
+%yVals = 1:length(y1)
+%graph2d.constantline(7,'Parent',axesHandle2,'LineStyle','--','Color',colorEcell); %1E
+%hold(axesHandle2,'on');
+%graph2d.constantline(14,'Parent',axesHandle1,'LineStyle','--','Color',colorEcell); %2E
+%hold(axesHandle2,'on');
+%e4 = graph2d.constantline(44,yVals,'Parent',axesHandle1,'LineStyle','--','Color',colorEcell); %4E
+%changedependvar(e4,'y')
+%hold(axesHandle2,'on');
+%line(100,yVals,'Parent',axesHandle1,'LineStyle','--','Color',colorEcell); %8E
+
+
+%%Now map all data to a single main plot
+
+%Set up main plots (separately)
+%figMain= figure('Position' ,[0,0,500,400]);
+%haxMain = axes('Parent' ,figMain);
+
+
+%DuPlotWormData.addPlotToAxes(hax0,haxMain);
+%DuPlotWormData.addPlotToAxes(hax1,haxMain);
+%DuPlotWormData.addPlotToAxes(hax2,haxMain);
+
+
+
+
+
+end
+
+
+
+
+

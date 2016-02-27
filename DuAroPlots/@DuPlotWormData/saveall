@@ -1,0 +1,8 @@
+
+allfigs = findobj('Type','Figure')
+d = 1
+for i = 1:length(allfigs)
+	strd = num2str(d) 
+		hgexport(i, ['figure' strd '.jpg'], hgexport('factorystyle'), 'Format', 'jpeg');
+	d=d+1;
+end;
